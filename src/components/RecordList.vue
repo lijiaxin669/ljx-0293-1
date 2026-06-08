@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { Trash2, ArrowDownCircle, ArrowUpCircle, Upload } from 'lucide-vue-next';
+import { Trash2, ArrowDownCircle, ArrowUpCircle, Upload, Edit3 } from 'lucide-vue-next';
 import { useRedPacketStore } from '../stores/redPacket';
-import type { RedPacket } from '../types';
-import { CHANNEL_OPTIONS, MAX_RECORDS } from '../types';
+import type { RedPacket, ReciprocityStatus } from '../types';
+import { CHANNEL_OPTIONS, OCCASION_OPTIONS, RECIPROCITY_OPTIONS, MAX_RECORDS } from '../types';
 
 const store = useRedPacketStore();
 const deleteConfirmId = ref<string | null>(null);
@@ -15,12 +15,30 @@ function getChannelLabel(channel: string): string {
   return opt ? `${opt.icon} ${opt.label}` : channel;
 }
 
+function getOccasionLabel(occasion: string): string {
+  const opt = OCCASION_OPTIONS.find(o => o.value === occasion);
+  return opt ? `${opt.icon} ${opt.label}` : occasion;
+}
+
+function getReciprocityStatusInfo(status: string) {
+  const opt = RECIPROCITY_OPTIONS.find(o => o.value === status);
+  return opt || { label: status, color: '#95A5A6' };
+}
+
 function formatAmount(record: RedPacket): string {
   const sign = record.type === 'receive' ? '+' : '-';
   return `${sign}¥${record.amount.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+async function cycleReciprocityStatus(record: RedPacket) {
+  const statuses: ReciprocityStatus[] = ['none', 'pending', 'balanced'];
+  const currentIndex = statuses.indexOf(record.reciprocityStatus);
+  const nextIndex = (currentIndex + 1) % statuses.length;
+  const nextStatus = statuses[nextIndex];
+  await store.updateReciprocityStatus(record.id, nextStatus);
 }
 
 function confirmDelete(id: string) {
@@ -87,8 +105,10 @@ async function handleImport() {
             <th class="pb-3 font-medium">亲友</th>
             <th class="pb-3 font-medium">类型</th>
             <th class="pb-3 font-medium">金额</th>
-            <th class="pb-3 font-medium hidden md:table-cell">渠道</th>
-            <th class="pb-3 font-medium hidden lg:table-cell">时间</th>
+            <th class="pb-3 font-medium hidden md:table-cell">场合</th>
+            <th class="pb-3 font-medium hidden lg:table-cell">渠道</th>
+            <th class="pb-3 font-medium hidden xl:table-cell">时间</th>
+            <th class="pb-3 font-medium">回礼状态</th>
             <th class="pb-3 font-medium text-right">操作</th>
           </tr>
         </thead>
@@ -99,7 +119,12 @@ async function handleImport() {
             class="group hover:bg-festival-paper/30 transition-colors"
           >
             <td class="py-4">
-              <span class="font-medium text-festival-ink">{{ record.relation }}</span>
+              <div class="flex flex-col">
+                <span class="font-medium text-festival-ink">{{ record.relation }}</span>
+                <span v-if="record.remark" class="text-xs text-festival-ink/40 mt-0.5 truncate max-w-[120px]">
+                  💬 {{ record.remark }}
+                </span>
+              </div>
             </td>
             <td class="py-4">
               <span
@@ -126,10 +151,26 @@ async function handleImport() {
               </span>
             </td>
             <td class="py-4 hidden md:table-cell">
-              <span class="text-festival-ink/70 text-sm">{{ getChannelLabel(record.channel) }}</span>
+              <span class="text-festival-ink/70 text-sm">{{ getOccasionLabel(record.occasion) }}</span>
             </td>
             <td class="py-4 hidden lg:table-cell">
+              <span class="text-festival-ink/70 text-sm">{{ getChannelLabel(record.channel) }}</span>
+            </td>
+            <td class="py-4 hidden xl:table-cell">
               <span class="text-festival-ink/50 text-sm">{{ record.date }} {{ record.time }}</span>
+            </td>
+            <td class="py-4">
+              <button
+                @click="cycleReciprocityStatus(record)"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all hover:opacity-80"
+                :style="{
+                  backgroundColor: getReciprocityStatusInfo(record.reciprocityStatus).color + '20',
+                  color: getReciprocityStatusInfo(record.reciprocityStatus).color,
+                }"
+              >
+                <Edit3 class="w-3 h-3" />
+                {{ getReciprocityStatusInfo(record.reciprocityStatus).label }}
+              </button>
             </td>
             <td class="py-4 text-right">
               <template v-if="deleteConfirmId !== record.id">
@@ -159,7 +200,7 @@ async function handleImport() {
             </td>
           </tr>
           <tr v-if="sortedRecords.length === 0">
-            <td colspan="6" class="py-12 text-center">
+            <td colspan="8" class="py-12 text-center">
               <div class="text-4xl mb-3">🧧</div>
               <p class="text-festival-ink/40">还没有记录，快去添加第一笔红包吧！</p>
             </td>

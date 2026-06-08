@@ -1,5 +1,7 @@
 export type RedPacketType = 'receive' | 'send';
 export type ChannelType = 'wechat' | 'alipay' | 'cash';
+export type OccasionType = 'newyear' | 'wedding' | 'baby' | 'moving' | 'other';
+export type ReciprocityStatus = 'pending' | 'balanced' | 'none';
 
 export interface RedPacket {
   id: string;
@@ -10,6 +12,9 @@ export interface RedPacket {
   date: string;
   time: string;
   createdAt: string;
+  occasion: OccasionType;
+  remark: string;
+  reciprocityStatus: ReciprocityStatus;
 }
 
 export interface Summary {
@@ -30,6 +35,15 @@ export interface DailyStat {
   send: number;
 }
 
+export interface ReconciliationStat {
+  relation: string;
+  totalReceive: number;
+  totalSend: number;
+  netAmount: number;
+  isUpsideDown: boolean;
+  recordCount: number;
+}
+
 export interface FormData {
   relation: string;
   amount: number;
@@ -38,6 +52,9 @@ export interface FormData {
   date: string;
   time: string;
   quickAddCount: number;
+  occasion: OccasionType;
+  remark: string;
+  reciprocityStatus: ReciprocityStatus;
 }
 
 export const RELATION_OPTIONS = [
@@ -60,6 +77,20 @@ export const CHANNEL_OPTIONS: { value: ChannelType; label: string; icon: string 
 export const TYPE_OPTIONS: { value: RedPacketType; label: string }[] = [
   { value: 'receive', label: '收红包' },
   { value: 'send', label: '发红包' },
+];
+
+export const OCCASION_OPTIONS: { value: OccasionType; label: string; icon: string }[] = [
+  { value: 'newyear', label: '拜年', icon: '🧧' },
+  { value: 'wedding', label: '婚礼', icon: '💒' },
+  { value: 'baby', label: '满月', icon: '👶' },
+  { value: 'moving', label: '乔迁', icon: '🏠' },
+  { value: 'other', label: '其他', icon: '📝' },
+];
+
+export const RECIPROCITY_OPTIONS: { value: ReciprocityStatus; label: string; color: string }[] = [
+  { value: 'pending', label: '待回礼', color: '#F39C12' },
+  { value: 'balanced', label: '已平账', color: '#27AE60' },
+  { value: 'none', label: '无需回礼', color: '#95A5A6' },
 ];
 
 export const MAX_RECORDS = 50;

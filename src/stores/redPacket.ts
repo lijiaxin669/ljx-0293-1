@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
-import type { RedPacket, Summary, RelationStat, DailyStat, RedPacketType } from '../types';
-import { addRecord, addRecords, deleteRecord, getAllRecords, importRecords } from '../utils/idb';
+import type { RedPacket, Summary, RelationStat, DailyStat, RedPacketType, ReconciliationStat, ReciprocityStatus } from '../types';
+import { addRecord, addRecords, deleteRecord, getAllRecords, importRecords, updateRecord, updateReciprocityStatus } from '../utils/idb';
 import { generateId, getSmartDateRange } from '../utils/date';
 
 interface RedPacketState {
@@ -72,6 +72,55 @@ export const useRedPacketStore = defineStore('redPacket', {
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
     },
+
+    reconciliationStats: (state): ReconciliationStat[] => {
+      const map = new Map<string, { totalReceive: number; totalSend: number; count: number }>();
+      
+      state.records.forEach(record => {
+        const current = map.get(record.relation) || { totalReceive: 0, totalSend: 0, count: 0 };
+        if (record.type === 'receive') {
+          current.totalReceive += record.amount;
+        } else {
+          current.totalSend += record.amount;
+        }
+        current.count += 1;
+        map.set(record.relation, current);
+      });
+      
+      return Array.from(map.entries())
+        .map(([relation, stats]) => {
+          const netAmount = stats.totalReceive - stats.totalSend;
+          return {
+            relation,
+            totalReceive: stats.totalReceive,
+            totalSend: stats.totalSend,
+            netAmount,
+            isUpsideDown: netAmount < 0,
+            recordCount: stats.count,
+          };
+        })
+        .sort((a, b) => b.netAmount - a.netAmount);
+    },
+
+    top10NetStats: (state): { name: string; value: number; isPositive: boolean }[] => {
+      const map = new Map<string, number>();
+      
+      state.records.forEach(record => {
+        const current = map.get(record.relation) || 0;
+        const amount = record.type === 'receive' ? record.amount : -record.amount;
+        map.set(record.relation, current + amount);
+      });
+      
+      return Array.from(map.entries())
+        .map(([name, value]) => ({
+          name,
+          value: Math.abs(value),
+          isPositive: value >= 0,
+        }))
+        .filter(item => item.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
+    },
   },
 
   actions: {
@@ -118,6 +167,22 @@ export const useRedPacketStore = defineStore('redPacket', {
       return this.records
         .filter(r => r.relation === relation && r.type === type)
         .reduce((sum, r) => sum + r.amount, 0);
+    },
+
+    async updateRecord(id: string, updates: Partial<RedPacket>) {
+      await updateRecord(id, updates);
+      const index = this.records.findIndex(r => r.id === id);
+      if (index !== -1) {
+        this.records[index] = { ...this.records[index], ...updates };
+      }
+    },
+
+    async updateReciprocityStatus(id: string, status: ReciprocityStatus) {
+      await updateReciprocityStatus(id, status);
+      const index = this.records.findIndex(r => r.id === id);
+      if (index !== -1) {
+        this.records[index].reciprocityStatus = status;
+      }
     },
   },
 });

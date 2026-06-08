@@ -4,6 +4,8 @@ import { Sparkles } from 'lucide-vue-next';
 import SummaryCards from './components/SummaryCards.vue';
 import PieChart from './components/PieChart.vue';
 import LineChart from './components/LineChart.vue';
+import ReconciliationPanel from './components/ReconciliationPanel.vue';
+import HorizontalBarChart from './components/HorizontalBarChart.vue';
 import RedPacketForm from './components/RedPacketForm.vue';
 import RecordList from './components/RecordList.vue';
 import { useRedPacketStore } from './stores/redPacket';
@@ -55,6 +57,11 @@ onMounted(async () => {
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <PieChart />
           <LineChart />
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <ReconciliationPanel />
+          <HorizontalBarChart />
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

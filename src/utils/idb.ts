@@ -1,29 +1,66 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { RedPacket } from '../types';
+import type { RedPacket, ReciprocityStatus } from '../types';
 import { MAX_RECORDS } from '../types';
 
 const DB_NAME = 'redPacketDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'records';
 
 let dbInstance: IDBPDatabase | null = null;
+
+function migrateRecord(record: any): RedPacket {
+  return {
+    ...record,
+    occasion: record.occasion || 'newyear',
+    remark: record.remark || '',
+    reciprocityStatus: record.reciprocityStatus || 'none',
+  };
+}
 
 async function getDB(): Promise<IDBPDatabase> {
   if (dbInstance) return dbInstance;
 
   dbInstance = await openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
         const store = db.createObjectStore(STORE_NAME, {
           keyPath: 'id',
         });
         store.createIndex('date', 'date');
         store.createIndex('createdAt', 'createdAt');
       }
+      
+      if (oldVersion < 2) {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.store;
+        store.openCursor().then(function cursorIterate(cursor) {
+          if (!cursor) return;
+          const record = cursor.value;
+          const migrated = migrateRecord(record);
+          cursor.update(migrated);
+          return cursor.continue().then(cursorIterate);
+        });
+        return tx.done;
+      }
     },
   });
 
   return dbInstance;
+}
+
+export async function updateRecord(id: string, updates: Partial<RedPacket>): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const record = await tx.store.get(id);
+  if (record) {
+    const updated = { ...record, ...updates };
+    await tx.store.put(updated);
+  }
+  await tx.done;
+}
+
+export async function updateReciprocityStatus(id: string, status: ReciprocityStatus): Promise<void> {
+  await updateRecord(id, { reciprocityStatus: status });
 }
 
 export async function addRecord(record: RedPacket): Promise<void> {
@@ -50,7 +87,7 @@ export async function deleteRecord(id: string): Promise<void> {
 export async function getAllRecords(): Promise<RedPacket[]> {
   const db = await getDB();
   const records = await db.getAllFromIndex(STORE_NAME, 'createdAt');
-  return records.reverse();
+  return records.reverse().map(migrateRecord);
 }
 
 export async function clearAllRecords(): Promise<void> {

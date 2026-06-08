@@ -7,9 +7,13 @@ import {
   RELATION_OPTIONS,
   CHANNEL_OPTIONS,
   TYPE_OPTIONS,
+  OCCASION_OPTIONS,
+  RECIPROCITY_OPTIONS,
   type FormData,
   type RedPacketType,
   type ChannelType,
+  type OccasionType,
+  type ReciprocityStatus,
 } from '../types';
 
 const store = useRedPacketStore();
@@ -24,6 +28,9 @@ const formData = reactive<FormData>({
   date: getCurrentDate(),
   time: getCurrentTime(),
   quickAddCount: 1,
+  occasion: 'newyear',
+  remark: '',
+  reciprocityStatus: 'none',
 });
 
 const quickAddRelations = ref<string[]>(['']);
@@ -48,6 +55,9 @@ function resetForm() {
   formData.date = getCurrentDate();
   formData.time = getCurrentTime();
   formData.quickAddCount = 1;
+  formData.occasion = 'newyear';
+  formData.remark = '';
+  formData.reciprocityStatus = 'none';
   showQuickAdd.value = false;
   quickAddRelations.value = [''];
 }
@@ -77,6 +87,9 @@ async function handleSubmit() {
         channel: formData.channel,
         date: formData.date,
         time: formData.time,
+        occasion: formData.occasion,
+        remark: formData.remark,
+        reciprocityStatus: formData.reciprocityStatus,
       }));
       await store.addRecords(records);
     } else {
@@ -87,6 +100,9 @@ async function handleSubmit() {
         channel: formData.channel,
         date: formData.date,
         time: formData.time,
+        occasion: formData.occasion,
+        remark: formData.remark,
+        reciprocityStatus: formData.reciprocityStatus,
       });
     }
     resetForm();
@@ -109,6 +125,14 @@ function setType(type: RedPacketType) {
 
 function setChannel(channel: ChannelType) {
   formData.channel = channel;
+}
+
+function setOccasion(occasion: OccasionType) {
+  formData.occasion = occasion;
+}
+
+function setReciprocityStatus(status: ReciprocityStatus) {
+  formData.reciprocityStatus = status;
 }
 </script>
 
@@ -270,6 +294,56 @@ function setChannel(channel: ChannelType) {
             class="w-full px-4 py-3 rounded-xl border-2 border-festival-paper focus:border-festival-red focus:outline-none transition-colors text-festival-ink"
           />
         </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-festival-ink mb-2">场合</label>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="opt in OCCASION_OPTIONS"
+            :key="opt.value"
+            @click="setOccasion(opt.value)"
+            :class="[
+              'px-4 py-2 rounded-xl border-2 transition-all duration-200 flex items-center gap-2',
+              formData.occasion === opt.value
+                ? 'border-festival-red bg-festival-red/5 text-festival-red'
+                : 'border-festival-paper text-festival-ink/60 hover:border-festival-paper-dark'
+            ]"
+          >
+            <span>{{ opt.icon }}</span>
+            <span class="text-sm">{{ opt.label }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-festival-ink mb-2">回礼状态</label>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="opt in RECIPROCITY_OPTIONS"
+            :key="opt.value"
+            @click="setReciprocityStatus(opt.value)"
+            :class="[
+              'px-4 py-2 rounded-xl border-2 transition-all duration-200',
+              formData.reciprocityStatus === opt.value
+                ? 'border-current text-white'
+                : 'border-festival-paper text-festival-ink/60 hover:border-festival-paper-dark'
+            ]"
+            :style="formData.reciprocityStatus === opt.value ? `background-color: ${opt.color}; border-color: ${opt.color};` : {}"
+          >
+            <span class="text-sm">{{ opt.label }}</span>
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-festival-ink mb-2">备注</label>
+        <textarea
+          v-model="formData.remark"
+          rows="2"
+          placeholder="添加备注信息（可选）"
+          class="w-full px-4 py-3 rounded-xl border-2 border-festival-paper focus:border-festival-red focus:outline-none transition-colors text-festival-ink resize-none"
+        ></textarea>
       </div>
 
       <button

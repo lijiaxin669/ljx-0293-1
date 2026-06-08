@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import type { RedPacket, Summary, RelationStat, DailyStat, RedPacketType } from '../types';
 import { addRecord, addRecords, deleteRecord, getAllRecords, importRecords } from '../utils/idb';
-import { generateId, getSpringFestivalDates } from '../utils/date';
+import { generateId, getSmartDateRange } from '../utils/date';
 
 interface RedPacketState {
   records: RedPacket[];
@@ -44,9 +44,9 @@ export const useRedPacketStore = defineStore('redPacket', {
 
     dailyStats: (state): DailyStat[] => {
       const currentYear = new Date().getFullYear();
-      const festivalDates = getSpringFestivalDates(currentYear);
+      const dateRange = getSmartDateRange(state.records, currentYear);
       
-      const result: DailyStat[] = festivalDates.map(({ date, label }) => ({
+      const result: DailyStat[] = dateRange.map(({ date, label }) => ({
         date,
         dateLabel: label,
         receive: 0,

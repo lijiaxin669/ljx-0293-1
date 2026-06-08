@@ -191,7 +191,7 @@ function handleResize() {
 }
 
 watch(
-  () => store.dailyStats,
+  () => store.records,
   () => {
     updateChart();
   },

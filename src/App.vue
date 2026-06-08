@@ -8,17 +8,51 @@ import ReconciliationPanel from './components/ReconciliationPanel.vue';
 import HorizontalBarChart from './components/HorizontalBarChart.vue';
 import RedPacketForm from './components/RedPacketForm.vue';
 import RecordList from './components/RecordList.vue';
+import FilterPanel from './components/FilterPanel.vue';
+import EditModal from './components/EditModal.vue';
+import PrintPreview from './components/PrintPreview.vue';
+import UndoToast from './components/UndoToast.vue';
 import { useRedPacketStore } from './stores/redPacket';
+import type { RedPacket } from './types';
 
 const store = useRedPacketStore();
 const isLoading = ref(true);
 
+const editModalVisible = ref(false);
+const editingRecord = ref<RedPacket | null>(null);
+const printPreviewVisible = ref(false);
+
 const currentYear = new Date().getFullYear();
 
 onMounted(async () => {
-  await store.fetchRecords();
-  isLoading.value = false;
+  try {
+    await store.fetchRecords();
+  } finally {
+    isLoading.value = false;
+  }
 });
+
+function handleEdit(record: RedPacket) {
+  editingRecord.value = record;
+  editModalVisible.value = true;
+}
+
+function handleEditClose() {
+  editModalVisible.value = false;
+  editingRecord.value = null;
+}
+
+function handleEditSaved() {
+  editingRecord.value = null;
+}
+
+function handlePrintPreview() {
+  printPreviewVisible.value = true;
+}
+
+function handlePrintPreviewClose() {
+  printPreviewVisible.value = false;
+}
 </script>
 
 <template>
@@ -64,15 +98,34 @@ onMounted(async () => {
           <HorizontalBarChart />
         </div>
 
+        <FilterPanel />
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div class="lg:col-span-1">
             <RedPacketForm />
           </div>
           <div class="lg:col-span-2">
-            <RecordList />
+            <RecordList
+              @edit="handleEdit"
+              @print-preview="handlePrintPreview"
+            />
           </div>
         </div>
       </div>
+
+      <EditModal
+        :visible="editModalVisible"
+        :record="editingRecord"
+        @close="handleEditClose"
+        @saved="handleEditSaved"
+      />
+
+      <PrintPreview
+        :visible="printPreviewVisible"
+        @close="handlePrintPreviewClose"
+      />
+
+      <UndoToast />
     </main>
 
     <footer class="bg-festival-ink text-white/60 py-6 mt-12">

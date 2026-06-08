@@ -1,14 +1,38 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { Trash2, ArrowDownCircle, ArrowUpCircle, Upload, Edit3 } from 'lucide-vue-next';
+import { 
+  Trash2, ArrowDownCircle, ArrowUpCircle, Upload, Edit3, 
+  FileSpreadsheet, Printer, CheckSquare, Square, X, Check, Edit
+} from 'lucide-vue-next';
 import { useRedPacketStore } from '../stores/redPacket';
+import { exportToCSV } from '../utils/csv';
 import type { RedPacket, ReciprocityStatus } from '../types';
 import { CHANNEL_OPTIONS, OCCASION_OPTIONS, RECIPROCITY_OPTIONS, MAX_RECORDS } from '../types';
 
+const emit = defineEmits<{
+  (e: 'edit', record: RedPacket): void;
+  (e: 'printPreview'): void;
+}>();
+
 const store = useRedPacketStore();
 const deleteConfirmId = ref<string | null>(null);
+const showBulkDeleteConfirm = ref(false);
 
-const sortedRecords = computed(() => store.sortedRecords);
+const filteredRecords = computed(() => store.filteredRecords);
+
+const isAllSelected = computed(() => {
+  return filteredRecords.value.length > 0 && 
+    filteredRecords.value.every(r => store.selectedRecordIds.includes(r.id));
+});
+
+const isIndeterminate = computed(() => {
+  const selectedCount = filteredRecords.value.filter(r => 
+    store.selectedRecordIds.includes(r.id)
+  ).length;
+  return selectedCount > 0 && selectedCount < filteredRecords.value.length;
+});
+
+const selectedCount = computed(() => store.selectedRecordIds.length);
 
 function getChannelLabel(channel: string): string {
   const opt = CHANNEL_OPTIONS.find(o => o.value === channel);
@@ -54,6 +78,10 @@ async function handleDelete(id: string) {
   deleteConfirmId.value = null;
 }
 
+function handleEdit(record: RedPacket) {
+  emit('edit', record);
+}
+
 async function handleImport() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -77,31 +105,143 @@ async function handleImport() {
   };
   input.click();
 }
+
+function handleExportCSV() {
+  if (filteredRecords.value.length === 0) {
+    alert('没有可导出的记录');
+    return;
+  }
+  exportToCSV(filteredRecords.value);
+}
+
+function handlePrintPreview() {
+  if (filteredRecords.value.length === 0) {
+    alert('没有可预览的记录');
+    return;
+  }
+  emit('printPreview');
+}
+
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    store.clearSelection();
+  } else {
+    store.selectAllFilteredRecords();
+  }
+}
+
+function toggleSelectOne(id: string) {
+  store.toggleRecordSelection(id);
+}
+
+function confirmBulkDelete() {
+  if (store.selectedRecordIds.length === 0) {
+    alert('请先选择要删除的记录');
+    return;
+  }
+  showBulkDeleteConfirm.value = true;
+}
+
+function cancelBulkDelete() {
+  showBulkDeleteConfirm.value = false;
+}
+
+async function handleBulkDelete() {
+  if (store.selectedRecordIds.length === 0) return;
+  
+  const count = store.selectedRecordIds.length;
+  await store.bulkDelete([...store.selectedRecordIds]);
+  store.clearSelection();
+  showBulkDeleteConfirm.value = false;
+}
 </script>
 
 <template>
   <div class="bg-white rounded-2xl shadow-card p-6">
     <div class="flex items-center justify-between mb-4">
-      <h3 class="text-lg font-bold text-festival-ink font-serif flex items-center">
-        <span class="w-1 h-5 bg-festival-red rounded-full mr-2"></span>
-        最近记录
-        <span class="ml-2 text-sm font-normal text-festival-ink/40">
-          ({{ sortedRecords.length }}/{{ MAX_RECORDS }})
-        </span>
-      </h3>
-      <button
-        @click="handleImport"
-        class="flex items-center gap-1 px-3 py-1.5 text-sm text-festival-red hover:bg-festival-red/5 rounded-lg transition-colors"
-      >
-        <Upload class="w-4 h-4" />
-        导入 JSON
-      </button>
+      <div class="flex items-center gap-4">
+        <h3 class="text-lg font-bold text-festival-ink font-serif flex items-center">
+          <span class="w-1 h-5 bg-festival-red rounded-full mr-2"></span>
+          红包记录
+          <span class="ml-2 text-sm font-normal text-festival-ink/40">
+            ({{ filteredRecords.length }}/{{ MAX_RECORDS }})
+          </span>
+        </h3>
+        
+        <div
+          v-if="selectedCount > 0"
+          class="flex items-center gap-2 px-3 py-1 bg-festival-red/10 rounded-full"
+        >
+          <Check class="w-4 h-4 text-festival-red" />
+          <span class="text-sm text-festival-red font-medium">
+            已选 {{ selectedCount }} 条
+          </span>
+          <button
+            @click="store.clearSelection()"
+            class="p-0.5 hover:bg-festival-red/20 rounded transition-colors"
+          >
+            <X class="w-3.5 h-3.5 text-festival-red" />
+          </button>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-2">
+        <button
+          v-if="filteredRecords.length > 0"
+          @click="handleExportCSV"
+          class="flex items-center gap-1 px-3 py-1.5 text-sm text-festival-ink/70 hover:text-festival-red hover:bg-festival-red/5 rounded-lg transition-colors"
+        >
+          <FileSpreadsheet class="w-4 h-4" />
+          导出 CSV
+        </button>
+        <button
+          v-if="filteredRecords.length > 0"
+          @click="handlePrintPreview"
+          class="flex items-center gap-1 px-3 py-1.5 text-sm text-festival-ink/70 hover:text-festival-red hover:bg-festival-red/5 rounded-lg transition-colors"
+        >
+          <Printer class="w-4 h-4" />
+          打印
+        </button>
+        <button
+          @click="handleImport"
+          class="flex items-center gap-1 px-3 py-1.5 text-sm text-festival-red hover:bg-festival-red/5 rounded-lg transition-colors"
+        >
+          <Upload class="w-4 h-4" />
+          导入 JSON
+        </button>
+        <button
+          v-if="selectedCount > 0"
+          @click="confirmBulkDelete"
+          class="flex items-center gap-1 px-3 py-1.5 text-sm text-festival-send hover:bg-festival-send/10 rounded-lg transition-colors"
+        >
+          <Trash2 class="w-4 h-4" />
+          批量删除
+        </button>
+      </div>
     </div>
 
     <div class="overflow-x-auto">
       <table class="w-full">
         <thead>
           <tr class="text-left text-sm text-festival-ink/50 border-b border-festival-paper">
+            <th class="pb-3 font-medium w-12">
+              <button
+                @click="toggleSelectAll"
+                class="p-1 hover:bg-festival-paper/50 rounded transition-colors"
+              >
+                <CheckSquare
+                  v-if="isAllSelected"
+                  class="w-4 h-4 text-festival-red"
+                />
+                <div
+                  v-else-if="isIndeterminate"
+                  class="w-4 h-4 border-2 border-festival-ink/40 rounded flex items-center justify-center"
+                >
+                  <div class="w-2 h-0.5 bg-festival-ink/40"></div>
+                </div>
+                <Square v-else class="w-4 h-4 text-festival-ink/40" />
+              </button>
+            </th>
             <th class="pb-3 font-medium">亲友</th>
             <th class="pb-3 font-medium">类型</th>
             <th class="pb-3 font-medium">金额</th>
@@ -114,10 +254,25 @@ async function handleImport() {
         </thead>
         <tbody class="divide-y divide-festival-paper/50">
           <tr
-            v-for="record in sortedRecords"
+            v-for="record in filteredRecords"
             :key="record.id"
-            class="group hover:bg-festival-paper/30 transition-colors"
+            :class="[
+              'group hover:bg-festival-paper/30 transition-colors',
+              store.selectedRecordIds.includes(record.id) ? 'bg-festival-red/5' : ''
+            ]"
           >
+            <td class="py-4">
+              <button
+                @click.stop="toggleSelectOne(record.id)"
+                class="p-1 hover:bg-festival-paper/50 rounded transition-colors"
+              >
+                <CheckSquare
+                  v-if="store.selectedRecordIds.includes(record.id)"
+                  class="w-4 h-4 text-festival-red"
+                />
+                <Square v-else class="w-4 h-4 text-festival-ink/30" />
+              </button>
+            </td>
             <td class="py-4">
               <div class="flex flex-col">
                 <span class="font-medium text-festival-ink">{{ record.relation }}</span>
@@ -173,40 +328,90 @@ async function handleImport() {
               </button>
             </td>
             <td class="py-4 text-right">
-              <template v-if="deleteConfirmId !== record.id">
+              <div class="flex items-center justify-end gap-1">
                 <button
-                  @click="confirmDelete(record.id)"
-                  class="p-2 text-festival-ink/30 hover:text-festival-send hover:bg-festival-send/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                  @click="handleEdit(record)"
+                  class="p-2 text-festival-ink/30 hover:text-festival-red hover:bg-festival-red/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                 >
-                  <Trash2 class="w-4 h-4" />
+                  <Edit class="w-4 h-4" />
                 </button>
-              </template>
-              <template v-else>
-                <div class="flex items-center justify-end gap-1">
+                <template v-if="deleteConfirmId !== record.id">
                   <button
-                    @click="handleDelete(record.id)"
-                    class="px-3 py-1 text-xs bg-festival-send text-white rounded-lg hover:bg-festival-send/90 transition-colors"
+                    @click="confirmDelete(record.id)"
+                    class="p-2 text-festival-ink/30 hover:text-festival-send hover:bg-festival-send/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                   >
-                    确认
+                    <Trash2 class="w-4 h-4" />
                   </button>
-                  <button
-                    @click="cancelDelete"
-                    class="px-3 py-1 text-xs bg-festival-paper text-festival-ink rounded-lg hover:bg-festival-paper-dark transition-colors"
-                  >
-                    取消
-                  </button>
-                </div>
-              </template>
+                </template>
+                <template v-else>
+                  <div class="flex items-center gap-1">
+                    <button
+                      @click="handleDelete(record.id)"
+                      class="px-3 py-1 text-xs bg-festival-send text-white rounded-lg hover:bg-festival-send/90 transition-colors"
+                    >
+                      确认
+                    </button>
+                    <button
+                      @click="cancelDelete"
+                      class="px-3 py-1 text-xs bg-festival-paper text-festival-ink rounded-lg hover:bg-festival-paper-dark transition-colors"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </template>
+              </div>
             </td>
           </tr>
-          <tr v-if="sortedRecords.length === 0">
-            <td colspan="8" class="py-12 text-center">
+          <tr v-if="filteredRecords.length === 0">
+            <td colspan="9" class="py-12 text-center">
               <div class="text-4xl mb-3">🧧</div>
-              <p class="text-festival-ink/40">还没有记录，快去添加第一笔红包吧！</p>
+              <p class="text-festival-ink/40">暂无符合条件的记录</p>
+              <p v-if="store.hasActiveFilters" class="text-sm text-festival-ink/30 mt-1">
+                尝试调整筛选条件
+              </p>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="showBulkDeleteConfirm"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      >
+        <div
+          class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          @click="cancelBulkDelete"
+        ></div>
+        <div class="relative bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full animate-fade-in">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-12 h-12 bg-festival-send/10 rounded-full flex items-center justify-center flex-shrink-0">
+              <Trash2 class="w-6 h-6 text-festival-send" />
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-festival-ink">确认批量删除</h3>
+              <p class="text-sm text-festival-ink/60">
+                将删除 {{ selectedCount }} 条记录，此操作可在 10 秒内撤销
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-3 mt-6">
+            <button
+              @click="cancelBulkDelete"
+              class="px-5 py-2 text-festival-ink/60 hover:text-festival-ink hover:bg-festival-paper rounded-lg transition-colors"
+            >
+              取消
+            </button>
+            <button
+              @click="handleBulkDelete"
+              class="px-5 py-2 bg-festival-send hover:bg-festival-send/90 text-white rounded-lg transition-colors"
+            >
+              确认删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

@@ -1,4 +1,4 @@
-import { openDB, type IDBPDatabase } from 'idb';
+import { openDB, type IDBPDatabase, type IDBPObjectStore } from 'idb';
 import type { RedPacket, ReciprocityStatus } from '../types';
 import { MAX_RECORDS } from '../types';
 
@@ -17,11 +17,22 @@ function migrateRecord(record: any): RedPacket {
   };
 }
 
+async function migrateAllRecords(
+  store: IDBPObjectStore<unknown, string[], 'records', 'versionchange'>,
+): Promise<void> {
+  let cursor = await store.openCursor();
+  while (cursor) {
+    await cursor.update(migrateRecord(cursor.value));
+    const next = await cursor.continue();
+    cursor = next ?? null;
+  }
+}
+
 async function getDB(): Promise<IDBPDatabase> {
   if (dbInstance) return dbInstance;
 
   dbInstance = await openDB(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion) {
+    upgrade(db, oldVersion, _newVersion, transaction) {
       if (oldVersion < 1) {
         const store = db.createObjectStore(STORE_NAME, {
           keyPath: 'id',
@@ -29,18 +40,9 @@ async function getDB(): Promise<IDBPDatabase> {
         store.createIndex('date', 'date');
         store.createIndex('createdAt', 'createdAt');
       }
-      
-      if (oldVersion < 2) {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.store;
-        store.openCursor().then(function cursorIterate(cursor) {
-          if (!cursor) return;
-          const record = cursor.value;
-          const migrated = migrateRecord(record);
-          cursor.update(migrated);
-          return cursor.continue().then(cursorIterate);
-        });
-        return tx.done;
+
+      if (oldVersion < 2 && oldVersion >= 1) {
+        return migrateAllRecords(transaction.objectStore(STORE_NAME));
       }
     },
   });
@@ -82,6 +84,15 @@ export async function addRecords(records: RedPacket[]): Promise<void> {
 export async function deleteRecord(id: string): Promise<void> {
   const db = await getDB();
   await db.delete(STORE_NAME, id);
+}
+
+export async function bulkDeleteRecords(ids: string[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  await Promise.all([
+    ...ids.map(id => tx.store.delete(id)),
+    tx.done,
+  ]);
 }
 
 export async function getAllRecords(): Promise<RedPacket[]> {

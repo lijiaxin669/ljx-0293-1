@@ -1,20 +1,106 @@
 import { defineStore } from 'pinia';
-import type { RedPacket, Summary, RelationStat, DailyStat, RedPacketType, ReconciliationStat, ReciprocityStatus } from '../types';
-import { addRecord, addRecords, deleteRecord, getAllRecords, importRecords, updateRecord, updateReciprocityStatus } from '../utils/idb';
+import type { RedPacket, Summary, RelationStat, DailyStat, RedPacketType, ReconciliationStat, ReciprocityStatus, FilterCriteria, DeletedRecord } from '../types';
+import { UNDO_DELETE_WINDOW } from '../types';
+import { addRecord, addRecords, deleteRecord, getAllRecords, importRecords, updateRecord, updateReciprocityStatus, bulkDeleteRecords } from '../utils/idb';
 import { generateId, getSmartDateRange } from '../utils/date';
 
 interface RedPacketState {
   records: RedPacket[];
   isLoading: boolean;
+  filterCriteria: FilterCriteria;
+  deletedRecords: DeletedRecord[];
+  selectedRecordIds: string[];
+}
+
+function getDefaultFilterCriteria(): FilterCriteria {
+  const today = new Date();
+  const oneMonthAgo = new Date();
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  
+  const formatDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  return {
+    type: 'all',
+    channel: 'all',
+    dateStart: formatDate(oneMonthAgo),
+    dateEnd: formatDate(today),
+    relation: '',
+    remarkKeyword: '',
+  };
 }
 
 export const useRedPacketStore = defineStore('redPacket', {
   state: (): RedPacketState => ({
     records: [],
     isLoading: false,
+    filterCriteria: getDefaultFilterCriteria(),
+    deletedRecords: [],
+    selectedRecordIds: [],
   }),
 
   getters: {
+    filteredRecords: (state): RedPacket[] => {
+      return state.records.filter(record => {
+        if (state.filterCriteria.type !== 'all' && record.type !== state.filterCriteria.type) {
+          return false;
+        }
+        if (state.filterCriteria.channel !== 'all' && record.channel !== state.filterCriteria.channel) {
+          return false;
+        }
+        if (state.filterCriteria.dateStart && record.date < state.filterCriteria.dateStart) {
+          return false;
+        }
+        if (state.filterCriteria.dateEnd && record.date > state.filterCriteria.dateEnd) {
+          return false;
+        }
+        if (state.filterCriteria.relation && !record.relation.includes(state.filterCriteria.relation)) {
+          return false;
+        }
+        if (state.filterCriteria.remarkKeyword && !record.remark.toLowerCase().includes(state.filterCriteria.remarkKeyword.toLowerCase())) {
+          return false;
+        }
+        return true;
+      }).sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    },
+
+    hasActiveFilters: (state): boolean => {
+      return state.filterCriteria.type !== 'all' ||
+        state.filterCriteria.channel !== 'all' ||
+        state.filterCriteria.dateStart !== '' ||
+        state.filterCriteria.dateEnd !== '' ||
+        state.filterCriteria.relation !== '' ||
+        state.filterCriteria.remarkKeyword !== '';
+    },
+
+    selectedRecords: (state): RedPacket[] => {
+      return state.records.filter(r => state.selectedRecordIds.includes(r.id));
+    },
+
+    filteredSummary: (state): Summary => {
+      const filtered = state.records.filter(record => {
+        if (state.filterCriteria.type !== 'all' && record.type !== state.filterCriteria.type) return false;
+        if (state.filterCriteria.channel !== 'all' && record.channel !== state.filterCriteria.channel) return false;
+        if (state.filterCriteria.dateStart && record.date < state.filterCriteria.dateStart) return false;
+        if (state.filterCriteria.dateEnd && record.date > state.filterCriteria.dateEnd) return false;
+        if (state.filterCriteria.relation && !record.relation.includes(state.filterCriteria.relation)) return false;
+        if (state.filterCriteria.remarkKeyword && !record.remark.toLowerCase().includes(state.filterCriteria.remarkKeyword.toLowerCase())) return false;
+        return true;
+      });
+      const totalReceive = filtered.filter(r => r.type === 'receive').reduce((sum, r) => sum + r.amount, 0);
+      const totalSend = filtered.filter(r => r.type === 'send').reduce((sum, r) => sum + r.amount, 0);
+      return {
+        totalReceive,
+        totalSend,
+        netAmount: totalReceive - totalSend,
+      };
+    },
     summary: (state): Summary => {
       const totalReceive = state.records
         .filter(r => r.type === 'receive')
@@ -153,9 +239,95 @@ export const useRedPacketStore = defineStore('redPacket', {
       this.records.push(...newRecords);
     },
 
-    async deleteRecord(id: string) {
+    async deleteRecord(id: string, enableUndo: boolean = true) {
+      const record = this.records.find(r => r.id === id);
+      if (!record) return;
+
       await deleteRecord(id);
       this.records = this.records.filter(r => r.id !== id);
+      this.selectedRecordIds = this.selectedRecordIds.filter(rId => rId !== id);
+
+      if (enableUndo) {
+        const timerId = window.setTimeout(() => {
+          this.deletedRecords = this.deletedRecords.filter(d => d.record.id !== id);
+        }, UNDO_DELETE_WINDOW);
+
+        this.deletedRecords.push({
+          record: { ...record },
+          deletedAt: Date.now(),
+          timerId,
+        });
+      }
+    },
+
+    async undoDelete(id: string) {
+      const deletedItem = this.deletedRecords.find(d => d.record.id === id);
+      if (!deletedItem) return;
+
+      clearTimeout(deletedItem.timerId);
+      this.deletedRecords = this.deletedRecords.filter(d => d.record.id !== id);
+
+      await addRecord(deletedItem.record);
+      this.records.push(deletedItem.record);
+    },
+
+    async bulkDelete(ids: string[], enableUndo: boolean = true) {
+      const recordsToDelete = this.records.filter(r => ids.includes(r.id));
+      if (recordsToDelete.length === 0) return;
+
+      await bulkDeleteRecords(ids);
+      this.records = this.records.filter(r => !ids.includes(r.id));
+      this.selectedRecordIds = this.selectedRecordIds.filter(rId => !ids.includes(rId));
+
+      if (enableUndo) {
+        const timerId = window.setTimeout(() => {
+          this.deletedRecords = this.deletedRecords.filter(d => !ids.includes(d.record.id));
+        }, UNDO_DELETE_WINDOW);
+
+        recordsToDelete.forEach(record => {
+          this.deletedRecords.push({
+            record: { ...record },
+            deletedAt: Date.now(),
+            timerId,
+          });
+        });
+      }
+    },
+
+    setFilterCriteria(criteria: Partial<FilterCriteria>) {
+      this.filterCriteria = { ...this.filterCriteria, ...criteria };
+    },
+
+    resetFilterCriteria() {
+      this.filterCriteria = getDefaultFilterCriteria();
+    },
+
+    toggleRecordSelection(id: string) {
+      const index = this.selectedRecordIds.indexOf(id);
+      if (index === -1) {
+        this.selectedRecordIds.push(id);
+      } else {
+        this.selectedRecordIds.splice(index, 1);
+      }
+    },
+
+    selectAllFilteredRecords() {
+      this.selectedRecordIds = this.filteredRecords.map(r => r.id);
+    },
+
+    clearSelection() {
+      this.selectedRecordIds = [];
+    },
+
+    removeExpiredDeletedRecords() {
+      const now = Date.now();
+      this.deletedRecords = this.deletedRecords.filter(d => {
+        if (now - d.deletedAt >= UNDO_DELETE_WINDOW) {
+          clearTimeout(d.timerId);
+          return false;
+        }
+        return true;
+      });
     },
 
     async importData(records: RedPacket[]) {

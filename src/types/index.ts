@@ -94,3 +94,21 @@ export const RECIPROCITY_OPTIONS: { value: ReciprocityStatus; label: string; col
 ];
 
 export const MAX_RECORDS = 50;
+export const UNDO_DELETE_WINDOW = 10000;
+
+export interface FilterCriteria {
+  type: RedPacketType | 'all';
+  channel: ChannelType | 'all';
+  dateStart: string;
+  dateEnd: string;
+  relation: string;
+  remarkKeyword: string;
+}
+
+export interface DeletedRecord {
+  record: RedPacket;
+  deletedAt: number;
+  timerId: number;
+}
+
+export interface EditFormData extends Omit<RedPacket, 'id' | 'createdAt'> {}
